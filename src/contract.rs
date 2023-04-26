@@ -122,7 +122,6 @@ fn swap(
     if tokens.is_empty() {
         Err(AllPending {})
     } else {
-        let tokens = vec![Token::Array(tokens)];
         Ok(Response::new()
             .add_message(CosmosMsg::Custom(PalomaMsg {
                 job_id: state.job_id,
