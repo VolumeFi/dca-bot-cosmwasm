@@ -7,7 +7,6 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 use ethabi::{Contract, Function, Param, ParamType, StateMutability, Token, Uint};
 use std::collections::BTreeMap;
-use std::str::FromStr;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, GetJobIdResponse, InstantiateMsg, PalomaMsg, QueryMsg};
@@ -75,16 +74,17 @@ fn swap(
             "swap".to_string(),
             vec![Function {
                 name: "swap".to_string(),
-                inputs: vec![Param {
-                    name: "swap_id".to_string(),
-                    kind: ParamType::Uint(256),
-                    internal_type: None,
-                },
-                Param{
-                    name: "amount_out_min".to_string(),
-                    kind: ParamType::Uint(256),
-                    internal_type: None,
-                }
+                inputs: vec![
+                    Param {
+                        name: "swap_id".to_string(),
+                        kind: ParamType::Uint(256),
+                        internal_type: None,
+                    },
+                    Param {
+                        name: "amount_out_min".to_string(),
+                        kind: ParamType::Uint(256),
+                        internal_type: None,
+                    },
                 ],
                 outputs: Vec::new(),
                 constant: None,
@@ -99,22 +99,38 @@ fn swap(
 
     let mut tokens: Vec<Token> = vec![];
     let retry_delay: u64 = RETRY_DELAY.load(deps.storage)?;
-    if let Some(timestamp) =
-        WITHDRAW_TIMESTAMP.may_load(deps.storage, (swap_id.to_be_bytes().as_slice(), number_trades.to_be_bytes().as_slice()))?
-    {
+    if let Some(timestamp) = WITHDRAW_TIMESTAMP.may_load(
+        deps.storage,
+        (
+            swap_id.to_be_bytes().as_slice(),
+            number_trades.to_be_bytes().as_slice(),
+        ),
+    )? {
         if timestamp.plus_seconds(retry_delay).lt(&env.block.time) {
-            tokens = vec![Token::Uint(Uint::from_str(swap_id.to_string().as_str()).unwrap()), Token::Uint(Uint::from_str(amount_out_min.to_string().as_str()).unwrap())];
+            tokens = vec![
+                Token::Uint(Uint::from_big_endian(&swap_id.to_be_bytes())),
+                Token::Uint(Uint::from_big_endian(&amount_out_min.to_be_bytes())),
+            ];
             WITHDRAW_TIMESTAMP.save(
                 deps.storage,
-                (swap_id.to_be_bytes().as_slice(), number_trades.to_be_bytes().as_slice()),
+                (
+                    swap_id.to_be_bytes().as_slice(),
+                    number_trades.to_be_bytes().as_slice(),
+                ),
                 &env.block.time,
             )?;
         }
     } else {
-        tokens = vec![Token::Uint(Uint::from_str(swap_id.to_string().as_str()).unwrap()), Token::Uint(Uint::from_str(amount_out_min.to_string().as_str()).unwrap())];
+        tokens = vec![
+            Token::Uint(Uint::from_big_endian(&swap_id.to_be_bytes())),
+            Token::Uint(Uint::from_big_endian(&amount_out_min.to_be_bytes())),
+        ];
         WITHDRAW_TIMESTAMP.save(
             deps.storage,
-            (swap_id.to_be_bytes().as_slice(), number_trades.to_be_bytes().as_slice()),
+            (
+                swap_id.to_be_bytes().as_slice(),
+                number_trades.to_be_bytes().as_slice(),
+            ),
             &env.block.time,
         )?;
     }
