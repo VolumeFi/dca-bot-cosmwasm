@@ -14,6 +14,16 @@ pub enum ExecuteMsg {
         amount_out_min: Uint256,
         number_trades: Uint256,
     },
+    SetPaloma {},
+    UpdateCompass {
+        new_compass: String,
+    },
+    UpdateRefundWallet {
+        new_refund_wallet: String,
+    },
+    UpdateFee {
+        fee: Uint256,
+    },
 }
 
 #[cw_serde]
