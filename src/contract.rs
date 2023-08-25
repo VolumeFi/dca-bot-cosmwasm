@@ -1,21 +1,16 @@
-use crate::ContractError::{AllPending, Unauthorized};
+use crate::ContractError::Unauthorized;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint256,
 };
-use cw2::set_contract_version;
 use ethabi::{Address, Contract, Function, Param, ParamType, StateMutability, Token, Uint};
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, GetJobIdResponse, InstantiateMsg, PalomaMsg, QueryMsg};
-use crate::state::{State, RETRY_DELAY, STATE, WITHDRAW_TIMESTAMP};
-
-// version info for migration info
-const CONTRACT_NAME: &str = "crates.io:dca-bot-pancakeswap-cw";
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+use crate::msg::{Deposit, ExecuteMsg, GetJobIdResponse, InstantiateMsg, PalomaMsg, QueryMsg};
+use crate::state::{State, STATE};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -28,9 +23,7 @@ pub fn instantiate(
         job_id: msg.job_id.clone(),
         owner: info.sender.clone(),
     };
-    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     STATE.save(deps.storage, &state)?;
-    RETRY_DELAY.save(deps.storage, &msg.retry_delay)?;
     Ok(Response::new()
         .add_attribute("method", "instantiate")
         .add_attribute("owner", info.sender)
@@ -40,56 +33,49 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response<PalomaMsg>, ContractError> {
     match msg {
-        ExecuteMsg::Swap {
-            swap_id,
-            amount_out_min,
-            number_trades,
-        } => swap(deps, env, swap_id, amount_out_min, number_trades),
+        ExecuteMsg::PutSwap { deposits } => swap(deps, deposits),
         ExecuteMsg::SetPaloma {} => set_paloma(deps, info),
         ExecuteMsg::UpdateCompass { new_compass } => update_compass(deps, info, new_compass),
         ExecuteMsg::UpdateRefundWallet { new_refund_wallet } => {
             update_refund_wallet(deps, info, new_refund_wallet)
         }
         ExecuteMsg::UpdateFee { fee } => update_fee(deps, info, fee),
+        ExecuteMsg::UpdateServiceFeeCollector {
+            new_service_fee_collector,
+        } => update_service_fee_collector(deps, info, new_service_fee_collector),
+        ExecuteMsg::UpdateServiceFee { new_service_fee } => {
+            update_service_fee(deps, info, new_service_fee)
+        }
     }
 }
 
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-    match msg {
-        QueryMsg::GetJobId {} => to_binary(&get_job_id(deps)?),
-    }
-}
-
-fn swap(
-    deps: DepsMut,
-    env: Env,
-    swap_id: Uint256,
-    amount_out_min: Uint256,
-    number_trades: Uint256,
-) -> Result<Response<PalomaMsg>, ContractError> {
-    let state = STATE.load(deps.storage)?;
+fn swap(deps: DepsMut, deposits: Vec<Deposit>) -> Result<Response<PalomaMsg>, ContractError> {
     #[allow(deprecated)]
     let contract: Contract = Contract {
         constructor: None,
         functions: BTreeMap::from_iter(vec![(
-            "swap".to_string(),
+            "multiple_swap".to_string(),
             vec![Function {
-                name: "swap".to_string(),
+                name: "multiple_swap".to_string(),
                 inputs: vec![
                     Param {
-                        name: "swap_id".to_string(),
-                        kind: ParamType::Uint(256),
+                        name: "deposit_id".to_string(),
+                        kind: ParamType::Array(Box::new(ParamType::Uint(256))),
+                        internal_type: None,
+                    },
+                    Param {
+                        name: "remaining_counts".to_string(),
+                        kind: ParamType::Array(Box::new(ParamType::Uint(256))),
                         internal_type: None,
                     },
                     Param {
                         name: "amount_out_min".to_string(),
-                        kind: ParamType::Uint(256),
+                        kind: ParamType::Array(Box::new(ParamType::Uint(256))),
                         internal_type: None,
                     },
                 ],
@@ -104,60 +90,42 @@ fn swap(
         fallback: false,
     };
 
-    let mut tokens: Vec<Token> = vec![];
-    let retry_delay: u64 = RETRY_DELAY.load(deps.storage)?;
-    if let Some(timestamp) = WITHDRAW_TIMESTAMP.may_load(
-        deps.storage,
-        (
-            swap_id.to_be_bytes().as_slice(),
-            number_trades.to_be_bytes().as_slice(),
-        ),
-    )? {
-        if timestamp.plus_seconds(retry_delay).lt(&env.block.time) {
-            tokens = vec![
-                Token::Uint(Uint::from_big_endian(&swap_id.to_be_bytes())),
-                Token::Uint(Uint::from_big_endian(&amount_out_min.to_be_bytes())),
-            ];
-            WITHDRAW_TIMESTAMP.save(
-                deps.storage,
-                (
-                    swap_id.to_be_bytes().as_slice(),
-                    number_trades.to_be_bytes().as_slice(),
-                ),
-                &env.block.time,
-            )?;
-        }
-    } else {
-        tokens = vec![
-            Token::Uint(Uint::from_big_endian(&swap_id.to_be_bytes())),
-            Token::Uint(Uint::from_big_endian(&amount_out_min.to_be_bytes())),
-        ];
-        WITHDRAW_TIMESTAMP.save(
-            deps.storage,
-            (
-                swap_id.to_be_bytes().as_slice(),
-                number_trades.to_be_bytes().as_slice(),
-            ),
-            &env.block.time,
-        )?;
+    let mut tokens_id: Vec<Token> = vec![];
+    let mut tokens_remaining_counts: Vec<Token> = vec![];
+    let mut tokens_min_amount: Vec<Token> = vec![];
+    for deposit in deposits {
+        let deposit_id = deposit.deposit_id;
+        let remaining_count = deposit.remaining_count;
+        let amount_out_min = deposit.amount_out_min;
+        tokens_id.push(Token::Uint(Uint::from_big_endian(
+            &deposit_id.to_be_bytes(),
+        )));
+        tokens_remaining_counts.push(Token::Uint(Uint::from_big_endian(
+            &remaining_count.to_be_bytes(),
+        )));
+        tokens_min_amount.push(Token::Uint(Uint::from_big_endian(
+            &amount_out_min.to_be_bytes(),
+        )));
     }
 
-    if tokens.is_empty() {
-        Err(AllPending {})
-    } else {
-        Ok(Response::new()
-            .add_message(CosmosMsg::Custom(PalomaMsg {
-                job_id: state.job_id,
-                payload: Binary(
-                    contract
-                        .function("swap")
-                        .unwrap()
-                        .encode_input(tokens.as_slice())
-                        .unwrap(),
-                ),
-            }))
-            .add_attribute("action", "swap"))
-    }
+    let tokens = vec![
+        Token::Array(tokens_id),
+        Token::Array(tokens_remaining_counts),
+        Token::Array(tokens_min_amount),
+    ];
+    let state = STATE.load(deps.storage)?;
+    Ok(Response::new()
+        .add_message(CosmosMsg::Custom(PalomaMsg {
+            job_id: state.job_id,
+            payload: Binary(
+                contract
+                    .function("multiple_swap")
+                    .unwrap()
+                    .encode_input(tokens.as_slice())
+                    .unwrap(),
+            ),
+        }))
+        .add_attribute("action", "multiple_swap"))
 }
 
 fn set_paloma(deps: DepsMut, info: MessageInfo) -> Result<Response<PalomaMsg>, ContractError> {
@@ -337,12 +305,112 @@ fn update_fee(
         .add_attribute("action", "update_fee"))
 }
 
-fn get_job_id(deps: Deps) -> StdResult<GetJobIdResponse> {
+fn update_service_fee_collector(
+    deps: DepsMut,
+    info: MessageInfo,
+    new_service_fee_collector: String,
+) -> Result<Response<PalomaMsg>, ContractError> {
+    let state = STATE.load(deps.storage)?;
+    if state.owner != info.sender {
+        return Err(Unauthorized {});
+    }
+    let new_service_fee_collector_address: Address =
+        Address::from_str(new_service_fee_collector.as_str()).unwrap();
+    #[allow(deprecated)]
+    let contract: Contract = Contract {
+        constructor: None,
+        functions: BTreeMap::from_iter(vec![(
+            "update_service_fee_collector".to_string(),
+            vec![Function {
+                name: "update_service_fee_collector".to_string(),
+                inputs: vec![Param {
+                    name: "new_service_fee_collector".to_string(),
+                    kind: ParamType::Address,
+                    internal_type: None,
+                }],
+                outputs: Vec::new(),
+                constant: None,
+                state_mutability: StateMutability::NonPayable,
+            }],
+        )]),
+        events: BTreeMap::new(),
+        errors: BTreeMap::new(),
+        receive: false,
+        fallback: false,
+    };
+
+    Ok(Response::new()
+        .add_message(CosmosMsg::Custom(PalomaMsg {
+            job_id: state.job_id,
+            payload: Binary(
+                contract
+                    .function("update_service_fee_collector")
+                    .unwrap()
+                    .encode_input(&[Token::Address(new_service_fee_collector_address)])
+                    .unwrap(),
+            ),
+        }))
+        .add_attribute("action", "update_service_fee_collector"))
+}
+
+fn update_service_fee(
+    deps: DepsMut,
+    info: MessageInfo,
+    new_service_fee: Uint256,
+) -> Result<Response<PalomaMsg>, ContractError> {
+    let state = STATE.load(deps.storage)?;
+    if state.owner != info.sender {
+        return Err(Unauthorized {});
+    }
+    #[allow(deprecated)]
+    let contract: Contract = Contract {
+        constructor: None,
+        functions: BTreeMap::from_iter(vec![(
+            "update_service_fee".to_string(),
+            vec![Function {
+                name: "update_service_fee".to_string(),
+                inputs: vec![Param {
+                    name: "new_service_fee".to_string(),
+                    kind: ParamType::Uint(256),
+                    internal_type: None,
+                }],
+                outputs: Vec::new(),
+                constant: None,
+                state_mutability: StateMutability::NonPayable,
+            }],
+        )]),
+        events: BTreeMap::new(),
+        errors: BTreeMap::new(),
+        receive: false,
+        fallback: false,
+    };
+
+    Ok(Response::new()
+        .add_message(CosmosMsg::Custom(PalomaMsg {
+            job_id: state.job_id,
+            payload: Binary(
+                contract
+                    .function("update_service_fee")
+                    .unwrap()
+                    .encode_input(&[Token::Uint(Uint::from_big_endian(
+                        &new_service_fee.to_be_bytes(),
+                    ))])
+                    .unwrap(),
+            ),
+        }))
+        .add_attribute("action", "update_service_fee"))
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    match msg {
+        QueryMsg::GetJobId {} => to_binary(&get_job_id(deps)?),
+    }
+}
+
+pub fn get_job_id(deps: Deps) -> StdResult<GetJobIdResponse> {
     let state = STATE.load(deps.storage)?;
     Ok(GetJobIdResponse {
         job_id: state.job_id,
     })
 }
-
-#[cfg(test)]
-mod tests {}
