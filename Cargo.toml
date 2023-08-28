@@ -1,7 +1,7 @@
 [package]
 name = "dca-bot-pancakeswap-cw"
 version = "0.1.0"
-authors = ["wc117"]
+authors = ["Volume Fi"]
 edition = "2021"
 
 exclude = [
