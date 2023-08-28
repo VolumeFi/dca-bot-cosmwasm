@@ -1,1 +1,1 @@
-6c73817292ae6b40d284530430197348008605c10ac54dc0c66873c51c6f6076  dca_bot_pancakeswap_cw.wasm
+f1f9c22b5f1b1cce7e83cfa5dc575a9ac677e44ad382a6e64f735ec2dea51f54  dca_bot_pancakeswap_cw.wasm

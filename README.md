@@ -1,26 +1,82 @@
-# DCA-Bot CosmWasm smart contract on Paloma
+# Uniswap V2 TWAP-Bot CosmWasm smart contract on Paloma
 
-This is a CosmWasm smart contract to send messages to a DCA-bot smart contract on EVM chain written in Vyper.
+This is a CosmWasm smart contract to send messages to a TWAP-bot smart contract on EVM chain written in Vyper.
 
 Users can deposit their token or coin into a Vyper smart contract on EVM chain.
 
-There is a view function in the smart contract that returns swappable id, minimal out amount, and remaining trade counts that can be swapped on Uniswap V2 or a DEX that works just like it.
+There is a view function in the smart contract that returns swappable id, minimal out amount, and remaining trade counts that can be swapped on Uniswap V2.
 
-A scheduler or script fetch the swappable id from the Vyper smart contract and run `swap` function with the id and minimal out amount.
+A scheduler or script fetch the swappable id from the Vyper smart contract and run `multiple_swap` function with the id and minimal out amount.
 
 And then, the Vyper smart contract will swap the assets and sent them to the depositors.
 
 ## ExecuteMsg
 
-### Swap
+### PutSwap
 
-Run `swap` function on Vyper smart contract.
+Run `multiple_swap` function on Vyper smart contract.
 
-| Key            | Type    | Description                               |
-|----------------|---------|-------------------------------------------|
-| swap_id        | Uint256 | Swap id to swap on a Vyper smart contract |
-| amount_out_min | Uint256 | Minimal amount to prevent front running   |
-| number_trades  | Uint256 | Remaining count of the trade              |
+| Key            | Type         | Description                        |
+|----------------|--------------|------------------------------------|
+| deposits       | Vec<Deposit> | Deposit information vector to Swap |
+
+### SetPaloma
+
+Run `set_paloma` function on Vyper smart contract to set CW address in `bytes32`.
+
+| Key | Type | Description |
+|-----|------|-------------|
+| -   | -    | -           |
+
+### UpdateCompass
+
+Run `update_compass` function on Vyper smart contract to update compass-evm contract address.
+
+| Key         | Type   | Description                      |
+|-------------|--------|----------------------------------|
+| new_compass | String | New compass-evm contract address |
+
+### UpdateRefundWallet
+
+Run `update_refund_wallet` function on Vyper smart contract to update refund wallet address that receives gas fee.
+
+| Key               | Type   | Description               |
+|-------------------|--------|---------------------------|
+| new_refund_wallet | String | New refund wallet address |
+
+### UpdateFee
+
+Run `update_fee` function on Vyper smart contract to update gas fee to pay for users.
+
+| Key | Type    | Description    |
+|-----|---------|----------------|
+| fee | Uint256 | New fee amount |
+
+### UpdateServiceFeeCollector
+
+Run `update_service_fee_collector` function on Vyper smart contract to update service fee collector address that receives service fee.
+
+| Key                       | Type   | Description                       |
+|---------------------------|--------|-----------------------------------|
+| new_service_fee_collector | String | New service fee collector address |
+
+### UpdateServiceFee
+
+Run `update_service_fee` function on Vyper smart contract to update service fee.
+
+| Key             | Type    | Description            |
+|-----------------|---------|------------------------|
+| new_service_fee | Uint256 | New service fee amount |
+
+## Struct
+
+### Deposit
+
+| Key             | Type    | Description                                  |
+|-----------------|---------|----------------------------------------------|
+| deposit_id      | u32     | Deposit id to swap on a Vyper smart contract |
+| remaining_count | u32     | Current remaining count of the TWAP bot      |
+| out_amount_min  | Uint256 | Minimal amount to prevent front running      |
 
 ## QueryMsg
 
