@@ -1,6 +1,6 @@
 use cosmwasm_schema::write_api;
 
-use dca_bot_pancakeswap_cw::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use twap_bot_uniswap_cw::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 
 fn main() {
     write_api! {

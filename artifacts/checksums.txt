@@ -1,1 +1,1 @@
-f1f9c22b5f1b1cce7e83cfa5dc575a9ac677e44ad382a6e64f735ec2dea51f54  dca_bot_pancakeswap_cw.wasm
+dba91085ebda9cb17978a2b1a72abba0d78402470fcc5a13b0d58d14f78d4529  twap_bot_uniswap_cw.wasm
