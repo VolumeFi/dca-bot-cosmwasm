@@ -2,7 +2,8 @@ use crate::ContractError::Unauthorized;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_binary, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint256,
+    to_json_binary, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
+    Uint256,
 };
 use ethabi::{Address, Contract, Function, Param, ParamType, StateMutability, Token, Uint};
 use std::collections::BTreeMap;
@@ -51,6 +52,7 @@ pub fn execute(
         ExecuteMsg::UpdateServiceFee { new_service_fee } => {
             update_service_fee(deps, info, new_service_fee)
         }
+        ExecuteMsg::UpdateJobId { new_job_id } => update_job_id(deps, info, new_job_id),
     }
 }
 
@@ -117,7 +119,7 @@ fn swap(deps: DepsMut, deposits: Vec<Deposit>) -> Result<Response<PalomaMsg>, Co
     Ok(Response::new()
         .add_message(CosmosMsg::Custom(PalomaMsg {
             job_id: state.job_id,
-            payload: Binary(
+            payload: Binary::new(
                 contract
                     .function("multiple_swap")
                     .unwrap()
@@ -154,7 +156,7 @@ fn set_paloma(deps: DepsMut, info: MessageInfo) -> Result<Response<PalomaMsg>, C
     Ok(Response::new()
         .add_message(CosmosMsg::Custom(PalomaMsg {
             job_id: state.job_id,
-            payload: Binary(
+            payload: Binary::new(
                 contract
                     .function("set_paloma")
                     .unwrap()
@@ -201,7 +203,7 @@ fn update_compass(
     Ok(Response::new()
         .add_message(CosmosMsg::Custom(PalomaMsg {
             job_id: state.job_id,
-            payload: Binary(
+            payload: Binary::new(
                 contract
                     .function("update_compass")
                     .unwrap()
@@ -248,7 +250,7 @@ fn update_refund_wallet(
     Ok(Response::new()
         .add_message(CosmosMsg::Custom(PalomaMsg {
             job_id: state.job_id,
-            payload: Binary(
+            payload: Binary::new(
                 contract
                     .function("update_refund_wallet")
                     .unwrap()
@@ -294,7 +296,7 @@ fn update_fee(
     Ok(Response::new()
         .add_message(CosmosMsg::Custom(PalomaMsg {
             job_id: state.job_id,
-            payload: Binary(
+            payload: Binary::new(
                 contract
                     .function("update_fee")
                     .unwrap()
@@ -342,7 +344,7 @@ fn update_service_fee_collector(
     Ok(Response::new()
         .add_message(CosmosMsg::Custom(PalomaMsg {
             job_id: state.job_id,
-            payload: Binary(
+            payload: Binary::new(
                 contract
                     .function("update_service_fee_collector")
                     .unwrap()
@@ -388,7 +390,7 @@ fn update_service_fee(
     Ok(Response::new()
         .add_message(CosmosMsg::Custom(PalomaMsg {
             job_id: state.job_id,
-            payload: Binary(
+            payload: Binary::new(
                 contract
                     .function("update_service_fee")
                     .unwrap()
@@ -401,10 +403,31 @@ fn update_service_fee(
         .add_attribute("action", "update_service_fee"))
 }
 
+fn update_job_id(
+    deps: DepsMut,
+    info: MessageInfo,
+    new_job_id: String,
+) -> Result<Response<PalomaMsg>, ContractError> {
+    let state = STATE.load(deps.storage)?;
+    if state.owner != info.sender {
+        return Err(Unauthorized {});
+    }
+
+    STATE.update(deps.storage, |mut state| -> Result<State, ContractError> {
+        state.job_id = new_job_id.clone();
+        Ok(state)
+    })?;
+
+    Ok(Response::new().add_attributes(vec![
+        ("action", "update_job_id"),
+        ("job_id", new_job_id.as_str()),
+    ]))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::GetJobId {} => to_binary(&get_job_id(deps)?),
+        QueryMsg::GetJobId {} => to_json_binary(&get_job_id(deps)?),
     }
 }
 
